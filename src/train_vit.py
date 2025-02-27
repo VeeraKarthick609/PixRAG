@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -8,28 +9,21 @@ import torchvision.datasets as datasets
 from tqdm import tqdm
 import numpy as np
 
-# Import AMP utilities from torch.amp (new recommended API)
 from torch.amp import autocast, GradScaler
 from models.vit import ViT
 
 # -------------------------
-# Function to Load Best Hyperparameters from file
+# Load Best Configuration from JSON File
 # -------------------------
-def load_best_hyperparameters(filepath):
-    best_params = {}
+def load_best_config(filepath):
+    """
+    Loads hyperparameters (both training and model) from a JSON file.
+    Returns a dictionary of configurations.
+    """
     if os.path.exists(filepath):
         with open(filepath, "r") as f:
-            lines = f.readlines()
-        for line in lines:
-            if ":" in line:
-                key, value = line.split(":", 1)
-                key = key.strip()
-                value = value.strip()
-                try:
-                    best_params[key] = float(value)
-                except ValueError:
-                    best_params[key] = value
-        return best_params
+            config = json.load(f)
+        return config
     else:
         return None
 
@@ -80,7 +74,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, scaler, sch
         correct += (preds == labels).sum().item()
         total += labels.size(0)
 
-        scheduler.step()  # Step scheduler on every batch
+        scheduler.step()  # Step the scheduler every batch
 
     epoch_loss = running_loss / total
     epoch_acc = correct / total
@@ -108,35 +102,45 @@ def validate(model, dataloader, criterion, device):
     return epoch_loss, epoch_acc
 
 # -------------------------
-# Main Training Loop (Using Hyperparameters from File)
+# Main Training Loop
 # -------------------------
 def main():
-    # Load best hyperparameters from file (if available)
-    best_params_path = "checkpoints/best_hyperparameters.txt"
-    best_params = load_best_hyperparameters(best_params_path)
-    if best_params is not None:
-        max_lr = best_params.get("max_lr", 0.0007)
-        weight_decay = best_params.get("weight_decay", 3e-4)
-        mixup_alpha = best_params.get("mixup_alpha", 0.3)
-        label_smoothing = best_params.get("label_smoothing", 0.1)
-        clip_grad_norm = best_params.get("clip_grad_norm", 1.0)
-        print("Loaded best hyperparameters:")
-        print(best_params)
+    # Load best configuration from JSON if available
+    config_path = "checkpoints/best_config.json"
+    best_config = load_best_config(config_path)
+    if best_config is not None:
+        max_lr = best_config.get("max_lr", 0.0007)
+        weight_decay = best_config.get("weight_decay", 3e-4)
+        mixup_alpha = best_config.get("mixup_alpha", 0.3)
+        label_smoothing = best_config.get("label_smoothing", 0.1)
+        clip_grad_norm = best_config.get("clip_grad_norm", 1.0)
+        embed_dim = int(best_config.get("embed_dim", 128))
+        depth = int(best_config.get("depth", 6))
+        num_heads = int(best_config.get("num_heads", 4))
+        mlp_dim = int(best_config.get("mlp_dim", 256))
+        dropout = best_config.get("dropout", 0.1)
+        print("Loaded best configuration:")
+        print(best_config)
     else:
-        # Fallback default values
+        # Fallback default configuration
         max_lr = 0.0007
         weight_decay = 3e-4
         mixup_alpha = 0.3
         label_smoothing = 0.1
         clip_grad_norm = 1.0
-        print("Best hyperparameters file not found. Using default values.")
+        embed_dim = 128
+        depth = 6
+        num_heads = 4
+        mlp_dim = 256
+        dropout = 0.1
+        print("Best configuration file not found. Using default values.")
 
-    num_epochs = 200
+    num_epochs = 100
     batch_size = 128
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # Data augmentation: Use RandAugment if available; otherwise, standard augmentations.
+    # Data augmentation: Try to use RandAugment if available; otherwise, standard augmentations.
     try:
         from torchvision.transforms import RandAugment
         rand_augment = RandAugment(num_ops=2, magnitude=9)
@@ -166,18 +170,21 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
-    # Initialize the custom ViT model
-    model = ViT(img_size=32, patch_size=4, in_channels=3, num_classes=100,
-                embed_dim=128, depth=6, num_heads=4, mlp_dim=256, dropout=0.1)
+    # Initialize the custom ViT model using the tuned model hyperparameters
+    model = ViT(
+        img_size=32, patch_size=4, in_channels=3, num_classes=100,
+        embed_dim=embed_dim, depth=depth, num_heads=num_heads,
+        mlp_dim=mlp_dim, dropout=dropout
+    )
     model.to(device)
     
     # Loss function with label smoothing
     criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
     
-    # Use AdamW optimizer
+    # Use AdamW optimizer with the tuned training hyperparameters
     optimizer = optim.AdamW(model.parameters(), lr=max_lr, weight_decay=weight_decay)
     
-    # OneCycleLR Scheduler: total_steps is total batches * num_epochs
+    # OneCycleLR Scheduler: total_steps = batches per epoch * num_epochs
     total_steps = len(train_loader) * num_epochs
     scheduler = optim.lr_scheduler.OneCycleLR(
         optimizer,
@@ -188,12 +195,11 @@ def main():
         final_div_factor=100
     )
     
-    scaler = GradScaler()  # Use torch.amp.GradScaler() with default settings
+    scaler = GradScaler()
     best_acc = 0.0
     os.makedirs("checkpoints", exist_ok=True)
     
     for epoch in range(num_epochs):
-        # Print current learning rate
         current_lr = scheduler.get_last_lr()[0]
         print(f"\nEpoch {epoch+1}/{num_epochs} | Current LR: {current_lr:.6f}")
         
