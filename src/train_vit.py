@@ -7,9 +7,33 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from tqdm import tqdm
 import numpy as np
-
 from torch.cuda.amp import autocast, GradScaler
-from models.vit import ViT
+from src.models.vit import ViT
+
+# -------------------------
+# Function to Load Best Hyperparameters
+# -------------------------
+def load_best_hyperparameters(filepath):
+    """
+    Reads a text file containing hyperparameters in 'key: value' format.
+    Returns a dictionary with hyperparameter names as keys and values as floats.
+    """
+    best_params = {}
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            lines = f.readlines()
+        for line in lines:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                key = key.strip()
+                value = value.strip()
+                try:
+                    best_params[key] = float(value)
+                except ValueError:
+                    best_params[key] = value
+        return best_params
+    else:
+        return None
 
 # -------------------------
 # Mixup Data Augmentation Functions
@@ -86,21 +110,35 @@ def validate(model, dataloader, criterion, device):
     return epoch_loss, epoch_acc
 
 # -------------------------
-# Main Training Loop (using best hyperparameters from tuning)
+# Main Training Loop (Using Loaded Hyperparameters)
 # -------------------------
 def main():
-    # Best hyperparameters obtained from tuning (example values)
+    # Load best hyperparameters from file (if available)
+    best_params_path = "checkpoints/best_hyperparameters.txt"
+    best_params = load_best_hyperparameters(best_params_path)
+    if best_params is not None:
+        max_lr = best_params.get("max_lr", 0.0007)
+        weight_decay = best_params.get("weight_decay", 3e-4)
+        mixup_alpha = best_params.get("mixup_alpha", 0.3)
+        label_smoothing = best_params.get("label_smoothing", 0.1)
+        clip_grad_norm = best_params.get("clip_grad_norm", 1.0)
+        print("Loaded best hyperparameters:")
+        print(best_params)
+    else:
+        # Fallback default values
+        max_lr = 0.0007
+        weight_decay = 3e-4
+        mixup_alpha = 0.3
+        label_smoothing = 0.1
+        clip_grad_norm = 1.0
+        print("Best hyperparameters file not found. Using default values.")
+
     num_epochs = 100
     batch_size = 128
-    max_lr = 0.0007          # Best maximum learning rate
-    weight_decay = 3e-4        # Best weight decay
-    mixup_alpha = 0.3          # Best mixup alpha
-    label_smoothing = 0.1      # Best label smoothing value
-    clip_grad_norm = 1.0       # Gradient clipping norm
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # Data augmentation: Using RandAugment if available; otherwise, standard augmentations.
+    # Data augmentation: Use RandAugment if available; otherwise, standard augmentations.
     try:
         from torchvision.transforms import RandAugment
         rand_augment = RandAugment(num_ops=2, magnitude=9)
