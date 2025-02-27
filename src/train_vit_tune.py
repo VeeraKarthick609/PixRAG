@@ -10,7 +10,7 @@ import numpy as np
 import optuna
 
 from torch.cuda.amp import autocast, GradScaler
-from src.models.vit import ViT
+from models.vit import ViT
 
 # -------------------------
 # Mixup Data Augmentation Functions

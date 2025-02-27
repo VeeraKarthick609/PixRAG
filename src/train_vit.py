@@ -9,7 +9,7 @@ from tqdm import tqdm
 import numpy as np
 
 from torch.cuda.amp import autocast, GradScaler
-from src.models.vit import ViT
+from models.vit import ViT
 
 # -------------------------
 # Mixup Data Augmentation Functions
