@@ -1,7 +1,1 @@
-torch
-torchvision
-streamlit
-numpy
-scikit-learn
-timm
-Pillow
+# requirements.txt
