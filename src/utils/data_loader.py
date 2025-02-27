@@ -1,4 +1,3 @@
-# data_loader.py
 import torch
 from torch.utils.data import DataLoader, random_split
 import torchvision

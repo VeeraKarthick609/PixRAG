@@ -9,7 +9,7 @@ class PatchEmbedding(nn.Module):
         super().__init__()
         self.patch_size = patch_size
         self.num_patches = (img_size // patch_size) ** 2
-        # Using a conv layer with kernel size and stride equal to patch_size to extract patches
+        # Use a conv layer with kernel size and stride equal to patch_size to extract patches
         self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
     
     def forward(self, x):
@@ -40,7 +40,7 @@ class TransformerEncoderBlock(nn.Module):
     def forward(self, x):
         # x: (B, N, E) where N is number of tokens (patches + class token)
         x_norm = self.norm1(x)
-        # nn.MultiheadAttention expects (L, N, E) so we transpose: L=N, N=B
+        # nn.MultiheadAttention expects (L, N, E); transpose: L=N, N=B
         attn_output, _ = self.attn(x_norm.transpose(0, 1),
                                    x_norm.transpose(0, 1),
                                    x_norm.transpose(0, 1))
@@ -54,7 +54,7 @@ class ViT(nn.Module):
                  embed_dim=128, depth=6, num_heads=4, mlp_dim=256, dropout=0.1):
         """
         Vision Transformer model built from scratch.
-        
+
         Args:
             img_size (int): Height/width of the input image (assumes square image).
             patch_size (int): Size of each patch.
@@ -71,7 +71,7 @@ class ViT(nn.Module):
         num_patches = self.patch_embed.num_patches
         # Learnable class token
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        # Learnable positional embedding (for all patches + class token)
+        # Learnable positional embedding for patches and class token
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
         self.dropout = nn.Dropout(dropout)
         
