@@ -7,17 +7,15 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from tqdm import tqdm
 import numpy as np
-from torch.cuda.amp import autocast, GradScaler
-from src.models.vit import ViT
+
+# Import AMP utilities from torch.amp (new recommended API)
+from torch.amp import autocast, GradScaler
+from models.vit import ViT
 
 # -------------------------
-# Function to Load Best Hyperparameters
+# Function to Load Best Hyperparameters from file
 # -------------------------
 def load_best_hyperparameters(filepath):
-    """
-    Reads a text file containing hyperparameters in 'key: value' format.
-    Returns a dictionary with hyperparameter names as keys and values as floats.
-    """
     best_params = {}
     if os.path.exists(filepath):
         with open(filepath, "r") as f:
@@ -67,7 +65,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, scaler, sch
         images, targets_a, targets_b, lam = mixup_data(images, labels, mixup_alpha)
 
         optimizer.zero_grad()
-        with autocast():
+        with autocast(device_type=device.type):
             outputs = model(images)
             loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
         scaler.scale(loss).backward()
@@ -82,7 +80,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, scaler, sch
         correct += (preds == labels).sum().item()
         total += labels.size(0)
 
-        scheduler.step()  # Scheduler steps on every batch
+        scheduler.step()  # Step scheduler on every batch
 
     epoch_loss = running_loss / total
     epoch_acc = correct / total
@@ -97,7 +95,7 @@ def validate(model, dataloader, criterion, device):
     with torch.no_grad():
         for images, labels in tqdm(dataloader, desc="Validation", leave=False):
             images, labels = images.to(device), labels.to(device)
-            with autocast():
+            with autocast(device_type=device.type):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
             running_loss += loss.item() * images.size(0)
@@ -110,7 +108,7 @@ def validate(model, dataloader, criterion, device):
     return epoch_loss, epoch_acc
 
 # -------------------------
-# Main Training Loop (Using Loaded Hyperparameters)
+# Main Training Loop (Using Hyperparameters from File)
 # -------------------------
 def main():
     # Load best hyperparameters from file (if available)
@@ -133,7 +131,7 @@ def main():
         clip_grad_norm = 1.0
         print("Best hyperparameters file not found. Using default values.")
 
-    num_epochs = 100
+    num_epochs = 200
     batch_size = 128
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -144,7 +142,7 @@ def main():
         rand_augment = RandAugment(num_ops=2, magnitude=9)
         print("Using RandAugment")
     except ImportError:
-        rand_augment = lambda x: x  # No-op if RandAugment isn't available
+        rand_augment = lambda x: x
         print("RandAugment not available; skipping")
     
     transform_train = transforms.Compose([
@@ -190,12 +188,15 @@ def main():
         final_div_factor=100
     )
     
-    scaler = GradScaler()
+    scaler = GradScaler()  # Use torch.amp.GradScaler() with default settings
     best_acc = 0.0
     os.makedirs("checkpoints", exist_ok=True)
     
     for epoch in range(num_epochs):
-        print(f"Epoch {epoch+1}/{num_epochs}")
+        # Print current learning rate
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"\nEpoch {epoch+1}/{num_epochs} | Current LR: {current_lr:.6f}")
+        
         train_loss, train_acc = train_one_epoch(
             model, train_loader, criterion, optimizer, device, scaler,
             scheduler, mixup_alpha, clip_grad_norm
